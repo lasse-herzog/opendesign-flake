@@ -16,6 +16,8 @@
   xdg-utils,
   poppler-utils,
   ffmpeg,
+  electron_44,
+  desktop-file-utils,
 }:
 let
   release = lib.importJSON ./release.json;
@@ -48,12 +50,13 @@ stdenv.mkDerivation (finalAttrs: {
     pkg-config
     makeWrapper
     autoPatchelfHook
+    desktop-file-utils
   ];
   buildInputs = [ stdenv.cc.cc.lib ];
   env = {
     ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
-    OPEN_DESIGN_POSTINSTALL_TARGETS = ''["apps/daemon","packages/components","packages/host"]'';
+    OPEN_DESIGN_POSTINSTALL_TARGETS = ''["apps/daemon","packages/components","packages/host","packages/download"]'';
     NEXT_TELEMETRY_DISABLED = "1";
     npm_config_nodedir = "${nodejs_24}";
     npm_config_build_from_source = "true";
@@ -68,7 +71,12 @@ stdenv.mkDerivation (finalAttrs: {
       popd
     done
     node scripts/postinstall.mjs
+    pnpm --filter @open-design/desktop build
+    pnpm --filter @open-design/web build:sidecar
+    pnpm --filter @open-design/packaged build
+    # Keep the od browser entry point as well as the desktop SSR runtime.
     pnpm --filter @open-design/web build
+    OD_WEB_OUTPUT_MODE=server pnpm --filter @open-design/web build
     runHook postBuild
   '';
 
@@ -80,13 +88,33 @@ stdenv.mkDerivation (finalAttrs: {
     cp -a node_modules packages "$out/lib/open-design/"
     # These workspace projects are build/test tools, not daemon dependencies.
     rm "$out/lib/open-design/node_modules/@open-design/"tools-{dev,pack,release,serve}
-    rm "$out/lib/open-design/node_modules/.pnpm/node_modules/@open-design/"{terminal,desktop,e2e,packaged,closure}
-    mkdir -p "$out/lib/open-design/apps/daemon" "$out/lib/open-design/apps/web"
+    rm "$out/lib/open-design/node_modules/.pnpm/node_modules/@open-design/"{terminal,e2e,closure}
+    mkdir -p "$out/lib/open-design/apps/"{daemon,web,desktop,packaged} "$out/lib/open-design/bin"
     cp -a apps/daemon/{bin,dist,node_modules,package.json} "$out/lib/open-design/apps/daemon/"
-    cp -a apps/web/out "$out/lib/open-design/apps/web/"
+    cp -a apps/desktop/{dist,node_modules,package.json,vendor} "$out/lib/open-design/apps/desktop/"
+    cp -a apps/packaged/{dist,node_modules,package.json} "$out/lib/open-design/apps/packaged/"
+    cp -a apps/web/{out,.next,dist,node_modules,package.json,public,next.config.ts,app,src} "$out/lib/open-design/apps/web/"
+    rm -rf "$out/lib/open-design/apps/web/.next/cache"
+    cp apps/desktop/dist/main/preload.cjs "$out/lib/open-design/preload.cjs"
+    ln -s ${nodejs_24}/bin/node "$out/lib/open-design/bin/node"
     cp -a package.json skills design-systems design-templates craft prompt-templates data assets plugins \
       "$out/lib/open-design/"
-    makeWrapper ${nodejs_24}/bin/node "$out/bin/open-design" \
+    cp ${./main.cjs} "$out/lib/open-design/main.cjs"
+    relativeRoot=$(node -p 'require("node:path").relative("${electron_44.dist}/resources", process.argv[1])' "$out/lib/open-design")
+    substitute ${./open-design-config.json.in} "$out/lib/open-design/open-design-config.json" \
+      --subst-var-by out "$out" --subst-var-by version "${finalAttrs.version}" \
+      --subst-var-by relativeRoot "$relativeRoot"
+    node - "$out/lib/open-design/package.json" <<'NODE'
+    const fs = require("node:fs");
+    const filename = process.argv[2];
+    const pkg = JSON.parse(fs.readFileSync(filename, "utf8"));
+    pkg.main = "main.cjs";
+    pkg.version = "${finalAttrs.version}";
+    fs.writeFileSync(filename, JSON.stringify(pkg, null, 2));
+    NODE
+    install -Dm644 ${./open-design.desktop} "$out/share/applications/open-design.desktop"
+    install -Dm644 tools/pack/resources/linux/icon.png "$out/share/icons/hicolor/512x512/apps/open-design.png"
+    makeWrapper ${nodejs_24}/bin/node "$out/bin/od" \
       --add-flags "$out/lib/open-design/apps/daemon/dist/cli.js" \
       --run 'export OD_DATA_DIR="''${OD_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/open-design}"' \
       --prefix PATH : ${
@@ -99,13 +127,28 @@ stdenv.mkDerivation (finalAttrs: {
           ffmpeg
         ]
       }
-    ln -s open-design "$out/bin/od"
+    makeWrapper ${electron_44}/bin/electron "$out/bin/open-design" \
+      --add-flags "$out/lib/open-design" \
+      --add-flags "--class=open-design" \
+      --set OD_PACKAGED_CONFIG_PATH "$out/lib/open-design/open-design-config.json" \
+      --set OD_UPDATE_ENABLED 0 \
+      --prefix PATH : ${
+        lib.makeBinPath [
+          nodejs_24
+          git
+          bash
+          xdg-utils
+          poppler-utils
+          ffmpeg
+        ]
+      }
     runHook postInstall
   '';
 
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
+    desktop-file-validate "$out/share/applications/open-design.desktop"
     cd "$out/lib/open-design/apps/daemon"
     node --input-type=commonjs -e '
       const Database = require("better-sqlite3");
@@ -117,8 +160,10 @@ stdenv.mkDerivation (finalAttrs: {
     runHook postInstallCheck
   '';
 
+  passthru.electron = electron_44;
+
   meta = {
-    description = "Local-first AI design workspace (browser UI and od CLI)";
+    description = "Local-first AI design workspace with the upstream Electron desktop shell";
     homepage = "https://github.com/nexu-io/open-design";
     license = lib.licenses.asl20;
     mainProgram = "open-design";

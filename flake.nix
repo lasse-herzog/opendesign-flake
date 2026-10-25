@@ -4,7 +4,7 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -13,6 +13,14 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
     {
+      apps = forAllSystems (system: {
+        default = {
+          type = "app";
+          meta.description = "Launch the Open Design desktop app";
+          program = "${self.packages.${system}.default}/bin/open-design";
+        };
+        open-design = self.apps.${system}.default;
+      });
       packages = forAllSystems (
         system:
         let

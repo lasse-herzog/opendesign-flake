@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open Design
+Comment=Local-first AI design workspace
+Exec=open-design %U
+Icon=open-design
+Terminal=false
+StartupNotify=true
+StartupWMClass=open-design
+Categories=Graphics;
+MimeType=x-scheme-handler/od;x-scheme-handler/opendesign;

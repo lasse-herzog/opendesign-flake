@@ -18,3 +18,5 @@ jobs:
       - run: nix flake check --all-systems --no-build
       - run: nix build .#default -L
       - run: ./result/bin/od --help
+      - name: Smoke-test the Electron app
+        run: nix shell --inputs-from . nixpkgs#nodejs_24 nixpkgs#xvfb-run --command xvfb-run -a node scripts/smoke-electron.mjs ./result --no-sandbox --disable-gpu --ozone-platform=x11

@@ -1,0 +1,10 @@
+{
+  "appVersion": "@version@",
+  "namespace": "default",
+  "nodeCommandRelative": "@relativeRoot@/bin/node",
+  "resourceRoot": "@out@/lib/open-design",
+  "daemonCliEntryRelative": "@relativeRoot@/apps/daemon/dist/cli.js",
+  "daemonSidecarEntryRelative": "@relativeRoot@/apps/daemon/dist/sidecar/index.js",
+  "webSidecarEntryRelative": "@relativeRoot@/apps/web/dist/sidecar/index.js",
+  "webOutputMode": "server"
+}
