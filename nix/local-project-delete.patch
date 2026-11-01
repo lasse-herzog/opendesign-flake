@@ -1,0 +1,42 @@
+--- a/apps/web/src/components/project-actions/useProjectDeleteFlow.ts
++++ b/apps/web/src/components/project-actions/useProjectDeleteFlow.ts
+@@ -40,8 +40,9 @@
+   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+   const accountGeneration = currentWorkspaceAccountGeneration();
+   const { history, status } = useProjectShareHistoryState(target && workspaceContext ? target.id : undefined, workspaceContext, 'delete-confirmation');
+-  const shareReadStatus = target && !workspaceContext ? 'error' : status;
+-  const activeShareCount = history ? history.publications.filter(publication => publication.status === 'active').length : null;
++  // Local projects have no account-scoped share history; the daemon still authorizes deletion.
++  const shareReadStatus = workspaceContext ? status : 'ready';
++  const activeShareCount = !workspaceContext ? 0 : history ? history.publications.filter(publication => publication.status === 'active').length : null;
+ 
+   const request = useCallback((project: Project) => {
+     setFailed(false);
+--- a/apps/web/tests/components/project-delete-share-warning.test.tsx
++++ b/apps/web/tests/components/project-delete-share-warning.test.tsx
+@@ -9,8 +9,8 @@
+ const project: Project = { id: 'project', name: 'Example', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 };
+ const request = vi.fn<typeof fetch>();
+ const remove = vi.fn(async () => true);
+-function Harness() {
+-  const flow = useProjectDeleteFlow({ onDelete: remove, analyticsPage: 'home', workspaceContext: context });
++function Harness({ workspaceContext = context }: { workspaceContext?: WorkspaceCollabContext | null } = {}) {
++  const flow = useProjectDeleteFlow({ onDelete: remove, analyticsPage: 'home', workspaceContext });
+   return <><button onClick={() => flow.request(project)}>Request delete</button><button onClick={() => void flow.commit()}>Invoke commit directly</button>{flow.target ? <ProjectDeleteConfirmDialog projectName={flow.target.name} activeShareCount={flow.activeShareCount} shareReadStatus={flow.shareReadStatus} pending={flow.pending} failed={flow.failed} onCancel={flow.cancel} onConfirm={() => void flow.commit()} /> : null}</>;
+ }
+ beforeEach(() => { request.mockReset(); remove.mockClear(); vi.stubGlobal('fetch', request); });
+@@ -91,3 +91,14 @@
+   expect(screen.queryByRole('alertdialog')).toBeNull();
+   expect(remove).not.toHaveBeenCalled();
+ });
++
++it('allows local-only deletion without requesting account share history', async () => {
++  render(<Harness workspaceContext={null} />);
++  fireEvent.click(screen.getByText('Request delete'));
++  expect(screen.getByTestId('project-delete-confirm-accept')).toBeEnabled();
++  expect(screen.queryByRole('alert')).toBeNull();
++  expect(request).not.toHaveBeenCalled();
++  fireEvent.click(screen.getByTestId('project-delete-confirm-accept'));
++  await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith('project'));
++  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
++});

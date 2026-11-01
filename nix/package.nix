@@ -49,6 +49,8 @@ stdenv.mkDerivation (finalAttrs: {
     hash = release.pnpmDepsHash;
   };
 
+  patches = [ ./local-project-delete.patch ];
+
   nativeBuildInputs = [
     nodejs
     pnpm
@@ -79,6 +81,7 @@ stdenv.mkDerivation (finalAttrs: {
       popd
     done
     node scripts/postinstall.mjs
+    pnpm --filter @open-design/web exec vitest run tests/components/project-delete-share-warning.test.tsx tests/components/project-actions/ProjectDeleteConfirmDialog.test.tsx tests/components/share/useProjectShareHistory.test.tsx
     pnpm --filter @open-design/desktop build
     pnpm --filter @open-design/web build:sidecar
     pnpm --filter @open-design/packaged build

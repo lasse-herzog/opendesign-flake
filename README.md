@@ -14,6 +14,11 @@ Without them, Node 24.21 can abort in `better-sqlite3` during garbage collection
 interrupting chats or preventing the daemon from starting. Both launchers also
 provide `bubblewrap` for agent CLIs that require it on Linux.
 
+The package also fixes project deletion in local mode: the confirmation does
+not require account-only sharing history when no workspace account is active.
+Daemon authorization and public-share cleanup remain in force. Focused deletion
+and share-history tests run during every package build.
+
 ```sh
 nix run github:lasse-herzog/opendesign-flake
 # From a local checkout, build / install:
