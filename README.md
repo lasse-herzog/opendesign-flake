@@ -9,6 +9,11 @@ This builds the upstream Electron desktop shell, web UI, packaged launcher, and
 using nixpkgs unstable's Electron 44.9.3 (`electron_44`). The daemon and web sidecars
 use Node 24, so their native modules retain the correct Node ABI.
 
+The Node runtime includes upstream's cleanup-hook fixes for native add-ons.
+Without them, Node 24.21 can abort in `better-sqlite3` during garbage collection,
+interrupting chats or preventing the daemon from starting. Both launchers also
+provide `bubblewrap` for agent CLIs that require it on Linux.
+
 ```sh
 nix run github:lasse-herzog/opendesign-flake
 # From a local checkout, build / install:
@@ -62,3 +67,5 @@ python3 scripts/update.py
 The check workflow evaluates both systems, builds on x86_64 Linux, and smoke-tests
 the actual Electron renderer, preload bridge, and daemon under Xvfb. ARM builds
 require an ARM builder and are not exercised by that workflow.
+The build also tests SQLite under allocation-driven garbage collection and
+worker teardown, which a single startup health check does not cover.

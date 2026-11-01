@@ -4,6 +4,7 @@
   fetchFromGitHub,
   fetchPnpmDeps,
   nodejs_24,
+  nodejs-slim_24,
   pnpm_10,
   pnpmConfigHook,
   node-gyp,
@@ -16,12 +17,19 @@
   xdg-utils,
   poppler-utils,
   ffmpeg,
+  bubblewrap,
   electron_44,
   desktop-file-utils,
 }:
 let
   release = lib.importJSON ./release.json;
-  pnpm = pnpm_10.override { nodejs-slim = nodejs_24; };
+  # Node 24.21 aborts when ObjectWrap addons are collected without a V8 context.
+  nodejs = nodejs_24.override {
+    nodejs-slim = nodejs-slim_24.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ./node-cleanup-hooks.patch ];
+    });
+  };
+  pnpm = pnpm_10.override { nodejs-slim = nodejs; };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "open-design";
@@ -42,7 +50,7 @@ stdenv.mkDerivation (finalAttrs: {
   };
 
   nativeBuildInputs = [
-    nodejs_24
+    nodejs
     pnpm
     pnpmConfigHook
     node-gyp
@@ -58,7 +66,7 @@ stdenv.mkDerivation (finalAttrs: {
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
     OPEN_DESIGN_POSTINSTALL_TARGETS = ''["apps/daemon","packages/components","packages/host","packages/download"]'';
     NEXT_TELEMETRY_DISABLED = "1";
-    npm_config_nodedir = "${nodejs_24}";
+    npm_config_nodedir = "${nodejs}";
     npm_config_build_from_source = "true";
   };
 
@@ -67,7 +75,7 @@ stdenv.mkDerivation (finalAttrs: {
     pnpm -r rebuild esbuild
     for module in better-sqlite3 node-pty; do
       pushd "$(realpath "apps/daemon/node_modules/$module")"
-      node-gyp rebuild --nodedir=${nodejs_24}
+      node-gyp rebuild --nodedir=${nodejs}
       popd
     done
     node scripts/postinstall.mjs
@@ -96,7 +104,7 @@ stdenv.mkDerivation (finalAttrs: {
     cp -a apps/web/{out,.next,dist,node_modules,package.json,public,next.config.ts,app,src} "$out/lib/open-design/apps/web/"
     rm -rf "$out/lib/open-design/apps/web/.next/cache"
     cp apps/desktop/dist/main/preload.cjs "$out/lib/open-design/preload.cjs"
-    ln -s ${nodejs_24}/bin/node "$out/lib/open-design/bin/node"
+    ln -s ${nodejs}/bin/node "$out/lib/open-design/bin/node"
     cp -a package.json skills design-systems design-templates craft prompt-templates data assets plugins \
       "$out/lib/open-design/"
     cp ${./main.cjs} "$out/lib/open-design/main.cjs"
@@ -114,17 +122,18 @@ stdenv.mkDerivation (finalAttrs: {
     NODE
     install -Dm644 ${./open-design.desktop} "$out/share/applications/open-design.desktop"
     install -Dm644 tools/pack/resources/linux/icon.png "$out/share/icons/hicolor/512x512/apps/open-design.png"
-    makeWrapper ${nodejs_24}/bin/node "$out/bin/od" \
+    makeWrapper ${nodejs}/bin/node "$out/bin/od" \
       --add-flags "$out/lib/open-design/apps/daemon/dist/cli.js" \
       --run 'export OD_DATA_DIR="''${OD_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/open-design}"' \
       --prefix PATH : ${
         lib.makeBinPath [
-          nodejs_24
+          nodejs
           git
           bash
           xdg-utils
           poppler-utils
           ffmpeg
+          bubblewrap
         ]
       }
     makeWrapper ${electron_44}/bin/electron "$out/bin/open-design" \
@@ -134,12 +143,13 @@ stdenv.mkDerivation (finalAttrs: {
       --set OD_UPDATE_ENABLED 0 \
       --prefix PATH : ${
         lib.makeBinPath [
-          nodejs_24
+          nodejs
           git
           bash
           xdg-utils
           poppler-utils
           ffmpeg
+          bubblewrap
         ]
       }
     runHook postInstall
@@ -149,14 +159,7 @@ stdenv.mkDerivation (finalAttrs: {
   installCheckPhase = ''
     runHook preInstallCheck
     desktop-file-validate "$out/share/applications/open-design.desktop"
-    cd "$out/lib/open-design/apps/daemon"
-    node --input-type=commonjs -e '
-      const Database = require("better-sqlite3");
-      const db = new Database(":memory:");
-      if (db.prepare("SELECT 1 AS value").get().value !== 1) process.exit(1);
-      db.close();
-      require("node-pty");
-    '
+    node ${../scripts/check-native-runtime.cjs} "$out"
     runHook postInstallCheck
   '';
 
