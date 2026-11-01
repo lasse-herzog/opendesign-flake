@@ -69,3 +69,16 @@ the actual Electron renderer, preload bridge, and daemon under Xvfb. ARM builds
 require an ARM builder and are not exercised by that workflow.
 The build also tests SQLite under allocation-driven garbage collection and
 worker teardown, which a single startup health check does not cover.
+
+## Binary cache
+
+Successful main-branch builds and release updates upload to the public
+[opendesign cache](https://opendesign.cachix.org). Both workflows use the
+`CACHIX_AUTH_TOKEN` GitHub Actions secret containing a cache-scoped write token.
+Uploads run after the desktop smoke test passes; pull requests only read the
+cache. The release updater uploads before committing its new release pin, so a
+failed upload prevents that commit.
+
+The package and its runtime closure are cached, including the patched Node
+runtime. Only x86_64 Linux artifacts are currently built by CI. ARM artifacts
+require an ARM builder. Cache retention follows the Cachix account's limits.
